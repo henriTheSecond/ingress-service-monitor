@@ -11,3 +11,4 @@ The ingress-service-monitor monitors the cluster for services that can be access
 3. ISM searches all the services in the consul cluster that have a certain tag prefix (configurable).
 4. For every tag, ISM trims off the prefix and places this tag on the ingress-service. It also registers the service with the ingress gateway.
 5. Traefik/fabio detect that there is a service with tags they can work with, and start serving traffic through the ingress gateway.
+
