@@ -81,7 +81,8 @@ func main() {
 	setVariables()
 	// setTestCase1()
 	time.Sleep(2 * time.Second)
-	go internal.PollIngressServices()
+	consul := internal.NewConsul()
+	go consul.PollIngressServices()
 	port := internal.PortNumber
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		healthCheck(w, r)

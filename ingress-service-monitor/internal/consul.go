@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -20,19 +21,30 @@ var ServiceNameIngressGateway = "ingress-gateway"
 var IngressServiceName = "ingress"
 var IngressHealthCheckPort = 8443
 var ConsulToken = ""
-var previousConsulIndex = 0
 
-func constructConsulNodeServicesURL(currentIndex int) string {
-	servicesURL := fmt.Sprintf("%v/v1/catalog/node/%v?index=%v&filter=Service!=consul+and+Kind==\"\"", ConsulHTTPURL, getNodeName(), currentIndex)
+type Consul struct {
+	serviceMonitor      *ServiceMonitor
+	previousConsulIndex int
+	oldGateway          *IngressGateway
+}
+
+func NewConsul() *Consul {
+	c := new(Consul)
+	c.serviceMonitor = NewServiceMonitor()
+	c.previousConsulIndex = -1
+	return c
+}
+func (c *Consul) constructConsulNodeServicesURL(currentIndex int) string {
+	servicesURL := fmt.Sprintf("%v/v1/catalog/node/%v?index=%v&filter=Service!=consul+and+Kind==\"\"", ConsulHTTPURL, c.getNodeName(), currentIndex)
 	log.Debug().Str("servicesURL", servicesURL).Msg("constructConsulNodeServicesURL")
 	return servicesURL
 }
-func constructServiceDefaultsURL(serviceName string, previousConsulIndex int) string {
+func (c *Consul) constructServiceDefaultsURL(serviceName string, previousConsulIndex int) string {
 	servicesURL := fmt.Sprintf("%v/v1/config/service-defaults/%v?index=%v", ConsulHTTPURL, serviceName, previousConsulIndex)
 	return servicesURL
 }
 
-func getNodeName() string {
+func (c *Consul) getNodeName() string {
 	nodeNameURL := fmt.Sprintf("%v/v1/agent/self", ConsulHTTPURL)
 	log.Debug().Str("nodenameurl", nodeNameURL).Msg("getNodeName")
 	req, err := http.NewRequest("GET", nodeNameURL, nil)
@@ -64,8 +76,8 @@ func getNodeName() string {
 	return ""
 }
 
-func getNodeServices(previousConsulIndex int) *http.Response {
-	req, err := http.NewRequest("GET", constructConsulNodeServicesURL(previousConsulIndex), nil)
+func (c *Consul) getNodeServices(previousConsulIndex int) *http.Response {
+	req, err := http.NewRequest("GET", c.constructConsulNodeServicesURL(previousConsulIndex), nil)
 	req.Header = http.Header{
 		"X-Consul-Token": {ConsulToken},
 	}
@@ -77,7 +89,7 @@ func getNodeServices(previousConsulIndex int) *http.Response {
 	}
 	return resp
 }
-func getConsulIndex(consulResponse *http.Response) int {
+func (c *Consul) getConsulIndex(consulResponse *http.Response) int {
 	if consulResponse != nil && consulResponse.Header != nil && consulResponse.Header["X-Consul-Index"] != nil && len(consulResponse.Header) > 0 && len(consulResponse.Header["X-Consul-Index"]) > 0 {
 		consulIndex, err := strconv.Atoi(consulResponse.Header["X-Consul-Index"][0])
 		if err != nil {
@@ -87,11 +99,11 @@ func getConsulIndex(consulResponse *http.Response) int {
 	}
 	return 0
 }
-func getServicesOnNode(node ConsulNode) map[string]*ConsulService {
+func (c *Consul) getServicesOnNode(node ConsulNode) map[string]*ConsulService {
 	return node.Services
 }
-func getIngressServices(previousConsulIndex int) (map[string]*ConsulService, int) {
-	resp := getNodeServices(previousConsulIndex)
+func (c *Consul) getIngressServices(previousConsulIndex int) (map[string]*ConsulService, int) {
+	resp := c.getNodeServices(previousConsulIndex)
 	if resp != nil {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -103,13 +115,13 @@ func getIngressServices(previousConsulIndex int) (map[string]*ConsulService, int
 		if parseErr != nil {
 			log.Error().Msg("Error parsing json")
 		}
-		consulIndex := getConsulIndex(resp)
+		consulIndex := c.getConsulIndex(resp)
 		resp.Body.Close()
-		return getServicesOnNode(node), consulIndex
+		return c.getServicesOnNode(node), consulIndex
 	}
 	return nil, 0
 }
-func registerTaggedService(gateway IngressGateway, tags []string) {
+func (c *Consul) registerTaggedService(gateway IngressGateway, tags []string) {
 	registerServiceURL := fmt.Sprintf("%v/v1/agent/service/register", ConsulHTTPURL)
 	if TypeGateway == "traefik" {
 		tags = append(tags, "traefik.enable=true")
@@ -149,7 +161,7 @@ func registerTaggedService(gateway IngressGateway, tags []string) {
 	}
 
 }
-func registerTaggedServiceHealthCheck() {
+func (c *Consul) registerTaggedServiceHealthCheck() {
 	var registerCheckURL = fmt.Sprintf("%v/v1/agent/check/register", ConsulHTTPURL)
 	register := FreeIngressHealthCheck{}
 	register.ServiceID = fmt.Sprintf("%s-service", IngressServiceName)
@@ -183,7 +195,7 @@ func registerTaggedServiceHealthCheck() {
 	}
 }
 
-func configureGateway(gateway IngressGateway, tags []string) {
+func (c *Consul) configureGateway(gateway IngressGateway, tags []string) {
 
 	var configURL = fmt.Sprintf("%v/v1/config", ConsulHTTPURL)
 	gwJSON, err := json.Marshal(gateway)
@@ -214,18 +226,17 @@ func configureGateway(gateway IngressGateway, tags []string) {
 		}
 		resp.Body.Close()
 
-		registerTaggedService(gateway, tags)
+		c.registerTaggedService(gateway, tags)
 	}
-
 }
-func waitForServiceDefaultChanges(serviceName string, previousConsulIndex int, previousValue string) {
-	if serviceIsMonitored(serviceName) {
+func (c *Consul) waitForServiceDefaultChanges(serviceName string, previousConsulIndex int, previousValue string) {
+	if c.serviceMonitor.serviceIsMonitored(serviceName) {
 		return
 	}
-	addToMonitoredServices(serviceName)
+	c.serviceMonitor.addToMonitoredServices(serviceName)
 	for previousConsulIndex > 0 {
 		log.Debug().Int("previousConsulIndex", previousConsulIndex).Msg("waitForDefaultChanges")
-		req, err := http.NewRequest("GET", constructServiceDefaultsURL(serviceName, previousConsulIndex), nil)
+		req, err := http.NewRequest("GET", c.constructServiceDefaultsURL(serviceName, previousConsulIndex), nil)
 		req.Header = http.Header{
 			"X-Consul-Token": {ConsulToken},
 		}
@@ -236,7 +247,7 @@ func waitForServiceDefaultChanges(serviceName string, previousConsulIndex int, p
 			time.Sleep(5 * time.Second)
 		}
 		if resp != nil {
-			previousConsulIndex = getConsulIndex(resp)
+			previousConsulIndex = c.getConsulIndex(resp)
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				log.Debug().Msg("Problem calling consul api")
@@ -253,14 +264,14 @@ func waitForServiceDefaultChanges(serviceName string, previousConsulIndex int, p
 			resp.Body.Close()
 			if serviceDefaults.Protocol != previousValue {
 				log.Debug().Str("forcing refresh for", serviceName).Msg("waitForServiceDefaultChanges")
-				checkIngressGateway(0)
+				c.checkIngressGateway(0)
 			}
 		}
 
 	}
 }
-func pollServiceWithoutDefaults(serviceName string) {
-	req, err := http.NewRequest("GET", constructServiceDefaultsURL(serviceName, 0), nil)
+func (c *Consul) pollServiceWithoutDefaults(serviceName string) {
+	req, err := http.NewRequest("GET", c.constructServiceDefaultsURL(serviceName, 0), nil)
 	req.Header = http.Header{
 		"X-Consul-Token": {ConsulToken},
 	}
@@ -275,16 +286,21 @@ func pollServiceWithoutDefaults(serviceName string) {
 			resp.Body.Close()
 			log.Debug().Str(serviceName, "no service defaults found for").Msg("sleeping 5s")
 			time.Sleep(5 * time.Second)
-			pollServiceWithoutDefaults(serviceName)
+			c.pollServiceWithoutDefaults(serviceName)
 		}
 		resp.Body.Close()
-		checkIngressGateway(0)
+		c.checkIngressGateway(0)
 	}
 
 }
-func getServiceProtocol(serviceName string) string {
+func (c *Consul) checkIngressGateway(previousConsulIndex int) int {
+	serviceMap, consulIndex := c.getIngressServices(previousConsulIndex)
+	c.addIngressGateway(serviceMap)
+	return consulIndex
+}
+func (c *Consul) getServiceProtocol(serviceName string) string {
 	// return "http"
-	req, err := http.NewRequest("GET", constructServiceDefaultsURL(serviceName, 0), nil)
+	req, err := http.NewRequest("GET", c.constructServiceDefaultsURL(serviceName, 0), nil)
 	req.Header = http.Header{
 		"X-Consul-Token": {ConsulToken},
 	}
@@ -296,9 +312,9 @@ func getServiceProtocol(serviceName string) string {
 	}
 	if resp != nil {
 		if resp.StatusCode != 200 {
-			if !serviceWithoutDefaultsIsMonitored(serviceName) {
-				addToMonitoredServicesWithoutDefault(serviceName)
-				go pollServiceWithoutDefaults(serviceName)
+			if !c.serviceMonitor.serviceWithoutDefaultsIsMonitored(serviceName) {
+				c.serviceMonitor.addToMonitoredServicesWithoutDefault(serviceName)
+				go c.pollServiceWithoutDefaults(serviceName)
 			}
 			return "tcp"
 		}
@@ -315,14 +331,23 @@ func getServiceProtocol(serviceName string) string {
 			log.Debug().Msg(err.Error())
 			time.Sleep(5 * time.Second)
 		}
-		cIndex := getConsulIndex(resp)
+		cIndex := c.getConsulIndex(resp)
 		resp.Body.Close()
-		go waitForServiceDefaultChanges(serviceName, cIndex, serviceDefaults.Protocol)
+		go c.waitForServiceDefaultChanges(serviceName, cIndex, serviceDefaults.Protocol)
 		return serviceDefaults.Protocol
 	}
 	return "tcp"
 }
-func addIngressGateway(services map[string]*ConsulService) {
+func (c *Consul) PollIngressServices() {
+
+	log.Debug().Msg("pollIngressServices")
+	if c.previousConsulIndex > -1 {
+		c.previousConsulIndex = c.checkIngressGateway(c.previousConsulIndex)
+	}
+	c.registerTaggedServiceHealthCheck()
+	c.PollIngressServices()
+}
+func (c *Consul) addIngressGateway(services map[string]*ConsulService) {
 	gateway := IngressGateway{}
 	gateway.Name = ServiceNameIngressGateway
 	gateway.Kind = "ingress-gateway"
@@ -335,16 +360,16 @@ func addIngressGateway(services map[string]*ConsulService) {
 	gwTags := []string{}
 	for _, cService := range services {
 		ingressTags := []string{}
-		createdTags := createGatewayTags(cService)
+		createdTags := c.serviceMonitor.createGatewayTags(cService)
 		for i := 0; i < len(createdTags); i++ {
 			ingressTags = append(ingressTags, createdTags[i])
 		}
-		if len(ingressTags) > 0 && !containsServiceWithName(httpListener.Services, cService.Service) {
+		if len(ingressTags) > 0 && !c.containsServiceWithName(httpListener.Services, cService.Service) {
 			service := IngressGatewayService{}
 			service.Name = cService.Service
-			serviceProtocol := getServiceProtocol(service.Name)
+			serviceProtocol := c.getServiceProtocol(service.Name)
 			if serviceProtocol == "http" {
-				hostHeader := getHostHeader(cService.Tags)
+				hostHeader := c.serviceMonitor.getHostHeader(cService.Tags)
 				if hostHeader != "" {
 					service.Hosts = append(service.Hosts, hostHeader)
 				}
@@ -363,10 +388,84 @@ func addIngressGateway(services map[string]*ConsulService) {
 	if tcpListener.Services != nil && len(tcpListener.Services) > 0 {
 		gateway.Listeners = append(gateway.Listeners, tcpListener)
 	}
-	if gatewayHasCHanges(oldGateway, gateway) == true {
+	if c.gatewayHasChanges(*c.oldGateway, gateway) == true {
 		log.Debug().Msg("gateway has changed, updating gateway")
-		configureGateway(gateway, gwTags)
-		oldGateway = gateway
+		c.configureGateway(gateway, gwTags)
+		*c.oldGateway = gateway
+	}
+}
+func (c *Consul) gatewayHasChanges(oldGateway IngressGateway, gateway IngressGateway) bool {
+	if oldGateway.Kind != gateway.Kind {
+		return true
+	}
+	if oldGateway.Name != gateway.Name {
+		return true
+	}
+	if len(oldGateway.Listeners) != len(gateway.Listeners) {
+		return true
+	}
+	for i := 0; i < len(oldGateway.Listeners); i++ {
+		if oldGateway.Listeners[i].Port != gateway.Listeners[i].Port {
+			return true
+		}
+		if oldGateway.Listeners[i].Protocol != gateway.Listeners[i].Protocol {
+			return true
+		}
+		if len(oldGateway.Listeners[i].Services) != len(gateway.Listeners[i].Services) {
+			return true
+		}
+		sort.Slice(oldGateway.Listeners[i].Services, func(a, b int) bool {
+			return oldGateway.Listeners[i].Services[a].Name < oldGateway.Listeners[i].Services[b].Name
+		})
+
+		sort.Slice(gateway.Listeners[i].Services, func(a, b int) bool {
+			return gateway.Listeners[i].Services[a].Name < gateway.Listeners[i].Services[b].Name
+		})
+		for j := 0; j < len(oldGateway.Listeners[i].Services); j++ {
+			if len(oldGateway.Listeners[i].Services[j].Hosts) != len(gateway.Listeners[i].Services[j].Hosts) {
+				return true
+			}
+			if c.containsService(oldGateway.Listeners[i].Services, gateway.Listeners[i].Services[j]) == false {
+				return true
+			}
+
+			for k := 0; k < len(oldGateway.Listeners[i].Services[j].Hosts); k++ {
+				if c.contains(oldGateway.Listeners[i].Services[j].Hosts, gateway.Listeners[i].Services[j].Hosts[k]) == false {
+					return true
+				}
+				if c.contains(gateway.Listeners[i].Services[j].Hosts, oldGateway.Listeners[i].Services[j].Hosts[k]) == false {
+					return true
+				}
+			}
+		}
 	}
 
+	return false
+}
+func (c *Consul) contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
+}
+func (c *Consul) containsService(s []IngressGatewayService, str IngressGatewayService) bool {
+	for _, v := range s {
+		if v.Name == str.Name {
+			return true
+		}
+	}
+
+	return false
+}
+func (c *Consul) containsServiceWithName(s []IngressGatewayService, serviceName string) bool {
+	for _, v := range s {
+		if v.Name == serviceName {
+			return true
+		}
+	}
+
+	return false
 }
