@@ -99,9 +99,6 @@ func (c *Consul) getConsulIndex(consulResponse *http.Response) int {
 	}
 	return 0
 }
-func (c *Consul) getServicesOnNode(node ConsulNode) map[string]*ConsulService {
-	return node.Services
-}
 func (c *Consul) getIngressServices(previousConsulIndex int) (map[string]*ConsulService, int) {
 	resp := c.getNodeServices(previousConsulIndex)
 	if resp != nil {
@@ -117,7 +114,7 @@ func (c *Consul) getIngressServices(previousConsulIndex int) (map[string]*Consul
 		}
 		consulIndex := c.getConsulIndex(resp)
 		resp.Body.Close()
-		return c.getServicesOnNode(node), consulIndex
+		return node.Services, consulIndex
 	}
 	return nil, 0
 }
