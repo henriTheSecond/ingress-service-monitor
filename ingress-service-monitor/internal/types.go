@@ -16,8 +16,9 @@ type ConsulSelfConfig struct {
 type ConsulNode struct {
 	Services map[string]*ConsulService
 }
+
 type ConsulService struct {
-	ID      string
+	// ID      string
 	Service string
 	Tags    []string
 }

@@ -31,11 +31,12 @@ type Consul struct {
 func NewConsul() *Consul {
 	c := new(Consul)
 	c.serviceMonitor = NewServiceMonitor()
-	c.previousConsulIndex = -1
+	c.previousConsulIndex = 0
+	c.oldGateway = new(IngressGateway)
 	return c
 }
 func (c *Consul) constructConsulNodeServicesURL(currentIndex int) string {
-	servicesURL := fmt.Sprintf("%v/v1/catalog/node/%v?index=%v&filter=Service!=consul+and+Kind==\"\"", ConsulHTTPURL, c.getNodeName(), currentIndex)
+	servicesURL := fmt.Sprintf("%v/v1/catalog/services?index=%v", ConsulHTTPURL, currentIndex)
 	log.Debug().Str("servicesURL", servicesURL).Msg("constructConsulNodeServicesURL")
 	return servicesURL
 }
@@ -107,10 +108,18 @@ func (c *Consul) getIngressServices(previousConsulIndex int) (map[string]*Consul
 			log.Error().Msg("problem reading consul response")
 		}
 		// log.Debug().Str("received body", string(body)).Msg("getIngressServices")
-		node := ConsulNode{}
-		parseErr := json.Unmarshal(body, &node)
+		node := new(ConsulNode)
+		node.Services = make(map[string]*ConsulService)
+		serviceMap := map[string][]string{}
+		parseErr := json.Unmarshal(body, &serviceMap)
 		if parseErr != nil {
 			log.Error().Msg("Error parsing json")
+		}
+		for service, tags := range serviceMap {
+			consulService := new(ConsulService)
+			consulService.Service = service
+			consulService.Tags = tags
+			node.Services[service] = consulService
 		}
 		consulIndex := c.getConsulIndex(resp)
 		resp.Body.Close()
@@ -138,6 +147,7 @@ func (c *Consul) registerTaggedService(gateway IngressGateway, tags []string) {
 	req, err := http.NewRequest("PUT", registerServiceURL, payloadBuf)
 	if err != nil {
 		log.Error().Msg(err.Error())
+		time.Sleep(5 * time.Second)
 	}
 	req.Header = http.Header{
 		"X-Consul-Token": {ConsulToken},
@@ -153,6 +163,7 @@ func (c *Consul) registerTaggedService(gateway IngressGateway, tags []string) {
 				log.Debug().Msg("problem reading consul response")
 			}
 			log.Debug().Str("received body", string(errbody)).Msg("registerTaggedService")
+			time.Sleep(5 * time.Second)
 		}
 		resp.Body.Close()
 	}
@@ -187,6 +198,7 @@ func (c *Consul) registerTaggedServiceHealthCheck() {
 				log.Debug().Msg("problem reading consul response")
 			}
 			log.Debug().Str("received body", string(errbody)).Msg("RegisterTaggedServiceHealthCheck")
+			time.Sleep(5 * time.Second)
 		}
 		resp.Body.Close()
 	}
@@ -220,6 +232,7 @@ func (c *Consul) configureGateway(gateway IngressGateway, tags []string) {
 				log.Debug().Msg("problem reading consul response")
 			}
 			log.Debug().Str("received body", string(errbody)).Msg("configureGateway")
+			time.Sleep(5 * time.Second)
 		}
 		resp.Body.Close()
 

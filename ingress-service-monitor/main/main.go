@@ -74,7 +74,7 @@ func setTestCase1() {
 	internal.ConsulHTTPURL = "https://localhost:8499"
 	internal.ServiceNameIngressGateway = "gateway-us-east"
 	internal.IngressServiceName = "gateway-us-east-ingress"
-	internal.ConsulToken = "4b0c063a-40dd-5796-79a9-e8ba75fdc05f"
+	internal.ConsulToken = "5d81b656-e6de-0c6e-505d-899a21bd2963"
 }
 func main() {
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
