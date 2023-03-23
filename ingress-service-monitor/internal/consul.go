@@ -35,7 +35,7 @@ func NewConsul() *Consul {
 	c.oldGateway = new(IngressGateway)
 	return c
 }
-func (c *Consul) constructConsulNodeServicesURL(currentIndex int) string {
+func (c *Consul) constructConsulServicesURL(currentIndex int) string {
 	servicesURL := fmt.Sprintf("%v/v1/catalog/services?index=%v", ConsulHTTPURL, currentIndex)
 	log.Debug().Str("servicesURL", servicesURL).Msg("constructConsulNodeServicesURL")
 	return servicesURL
@@ -77,8 +77,8 @@ func (c *Consul) getNodeName() string {
 	return ""
 }
 
-func (c *Consul) getNodeServices(previousConsulIndex int) *http.Response {
-	req, err := http.NewRequest("GET", c.constructConsulNodeServicesURL(previousConsulIndex), nil)
+func (c *Consul) getConsulServices(previousConsulIndex int) *http.Response {
+	req, err := http.NewRequest("GET", c.constructConsulServicesURL(previousConsulIndex), nil)
 	req.Header = http.Header{
 		"X-Consul-Token": {ConsulToken},
 	}
@@ -101,13 +101,12 @@ func (c *Consul) getConsulIndex(consulResponse *http.Response) int {
 	return 0
 }
 func (c *Consul) getIngressServices(previousConsulIndex int) (map[string]*ConsulService, int) {
-	resp := c.getNodeServices(previousConsulIndex)
+	resp := c.getConsulServices(previousConsulIndex)
 	if resp != nil {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			log.Error().Msg("problem reading consul response")
 		}
-		// log.Debug().Str("received body", string(body)).Msg("getIngressServices")
 		node := new(ConsulNode)
 		node.Services = make(map[string]*ConsulService)
 		serviceMap := map[string][]string{}
