@@ -12,7 +12,7 @@ gw-us-east-traefik.http.routers.myservice.rule=Host('myserviceabc.mydomain.local
 3. ISM searches all the services in the consul cluster that have a certain tag prefix (e.g.:gw-us-east).
 4. ISM creates the ingress-service (service name is configurable)
 5. For every tag, ISM trims off the prefix and places this tag on the ingress-service. 
-6. It registers the service with the ingress gateway. It does so based on the hostname that is given in the traefik/fabio tag.
+6. It registers the service (e.g.: myservice) with the ingress gateway. It does so based on the hostname that is given in the traefik/fabio tag.
 7. Traefik/fabio detects that there is a service with tags it can work with, and start serving traffic through the ingress gateway.
 ### Configuration
 Environment-variables:
