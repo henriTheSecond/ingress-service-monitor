@@ -11,3 +11,13 @@ The ingress-service-monitor monitors the cluster for services that can be access
 3. ISM searches all the services in the consul cluster that have a certain tag prefix (configurable).
 4. For every tag, ISM trims off the prefix and places this tag on the ingress-service. It also registers the service with the ingress gateway.
 5. Traefik/fabio detect that there is a service with tags they can work with, and start serving traffic through the ingress gateway.
+### Configuration
+Environment-variables:
+- TYPEGATEWAY: traefik|fabio
+- TAGINGRESSSERVICE: e.g.: gw-us-east (the tag that can be placed on services to be monitored by traefik|fabio)
+- SERVICENAMEINGRESSGATEWAY: e.g.: gateway-us-east (the name of the service for the ingress gateway)
+- INGRESSPORT: default= 9997 (the port that the envoy ingress gateway needs to expose in its listeners)
+- INGRESSHEALTHCHECKPORT: default=8443 (the healthcheck port that the envoy ingress gateway needs to expose)
+- INGRESSSERVICENAME: gateway-us-east-ingress (the name of the service that will be monitored by traefik|fabio)
+- CONSULHTTPURL: default= http://127.0.0.1:8500
+- CONSULTOKEN:
