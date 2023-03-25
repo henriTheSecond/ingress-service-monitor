@@ -7,7 +7,7 @@ The ingress-service-monitor monitors the cluster for services that can be access
 ### How does it work?
 1. You have a service you want to expose to the outside world.
 2. You tag it with the tag prefix: e.g.: gw-us-east-traefik.http.routers.service6000.tls=true, et al
-2. ISM starts a consul service on the port that the ingress gateway will listen on (this port is configurable). We call this the ingress-service.
+2. ISM starts a consul service on the port that the ingress gateway will listen on (this port is configurable).
 3. ISM searches all the services in the consul cluster that have a certain tag prefix (configurable).
 4. For every tag, ISM trims off the prefix and places this tag on the ingress-service. It also registers the service with the ingress gateway.
 5. Traefik/fabio detects that there is a service with tags they can work with, and start serving traffic through the ingress gateway.
@@ -17,7 +17,7 @@ Environment-variables:
 - TAGINGRESSSERVICE: e.g.: gw-us-east (the tag that can be placed on services to be monitored by traefik|fabio)
 - SERVICENAMEINGRESSGATEWAY: e.g.: gateway-us-east (the name of the service for the ingress gateway)
 - INGRESSPORT: default= 9997 (the port that the envoy ingress gateway needs to expose in its listeners)
-- INGRESSHEALTHCHECKPORT: default=8443 (the healthcheck port that the envoy ingress gateway needs to expose)
+- INGRESSHEALTHCHECKPORT: default=8443 (the healthcheck port that the envoy ingress gateway needs to expose, :8443/ready is used)
 - INGRESSSERVICENAME: gateway-us-east-ingress (the name of the service that will be monitored by traefik|fabio)
 - CONSULHTTPURL: default= http://127.0.0.1:8500
 - CONSULTOKEN: (need write permissions on SERVICENAMEINGRESSGATEWAY, read permissions on /config and /config/service-defaults/serviceName)
