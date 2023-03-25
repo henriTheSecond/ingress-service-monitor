@@ -21,3 +21,5 @@ Environment-variables:
 - INGRESSSERVICENAME: gateway-us-east-ingress (the name of the service that will be monitored by traefik|fabio)
 - CONSULHTTPURL: default= http://127.0.0.1:8500
 - CONSULTOKEN: (need write permissions on SERVICENAMEINGRESSGATEWAY, read permissions on /config and /config/service-defaults/serviceName)
+### Health check
+There is a /health check exposed at port 10000, so that you can register the ingress-service-monitor within consul itself.
