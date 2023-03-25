@@ -6,7 +6,7 @@ The difficulty is to safely direct traffic into the cluster. You probably have s
 The ingress-service-monitor monitors the cluster for services that can be accessed through the gateway. It does this based on a tag-prefix (see below).
 ### How does it work?
 1. You have a service you want to expose to the outside world.
-2. You tag it with the tag prefix: e.g.: gw-us-east-traefik.http.routers.service6000.tls=true, 
+2. You tag it with the tag prefix: e.g.: gw-us-east-traefik.http.routers.myservice.tls=true, 
 gw-us-east-traefik.http.routers.myservice.rule=Host('myserviceabc.mydomain.local')
 2. ISM starts a consul service on the port that the ingress gateway will listen on (this port is configurable).
 3. ISM searches all the services in the consul cluster that have a certain tag prefix (e.g.:gw-us-east).
