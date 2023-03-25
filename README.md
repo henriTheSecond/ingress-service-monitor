@@ -6,11 +6,14 @@ The difficulty is to safely direct traffic into the cluster. You probably have s
 The ingress-service-monitor monitors the cluster for services that can be accessed through the gateway. It does this based on a tag-prefix (see below).
 ### How does it work?
 1. You have a service you want to expose to the outside world.
-2. You tag it with the tag prefix: e.g.: gw-us-east-traefik.http.routers.service6000.tls=true, et al
+2. You tag it with the tag prefix: e.g.: gw-us-east-traefik.http.routers.service6000.tls=true, 
+gw-us-east-traefik.http.routers.myservice.rule=Host('myserviceabc.mydomain.local')
 2. ISM starts a consul service on the port that the ingress gateway will listen on (this port is configurable).
-3. ISM searches all the services in the consul cluster that have a certain tag prefix (configurable).
-4. For every tag, ISM trims off the prefix and places this tag on the ingress-service. It also registers the service with the ingress gateway. It does so based on the hostname that is given in the traefik/fabio tag.
-5. Traefik/fabio detects that there is a service with tags it can work with, and start serving traffic through the ingress gateway.
+3. ISM searches all the services in the consul cluster that have a certain tag prefix (e.g.:gw-us-east).
+4. ISM creates the ingress-service (service name is configurable)
+5. For every tag, ISM trims off the prefix and places this tag on the ingress-service. 
+6. It registers the service with the ingress gateway. It does so based on the hostname that is given in the traefik/fabio tag.
+7. Traefik/fabio detects that there is a service with tags it can work with, and start serving traffic through the ingress gateway.
 ### Configuration
 Environment-variables:
 - TYPEGATEWAY: traefik|fabio
