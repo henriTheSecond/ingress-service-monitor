@@ -1,8 +1,8 @@
 # ingress-service-monitor
-## The problem
+## What we are trying to solve
 The Consul Connect service mesh can be used to discover and secure services.
 The difficulty is to safely direct traffic into the cluster. You probably have something like traefik or fabio already taking care of this in some way. But how can we dynamically find services in consul that can be accessed through fabio or traefik? And how do we make this work with an ingress gateway?
-## The solution
+## Proposed solution
 The ingress-service-monitor monitors the cluster for services that can be accessed through the gateway. It does this based on a tag-prefix (see below).
 ### How does it work?
 1. You have a service you want to expose to the outside world.
