@@ -17,8 +17,8 @@ import (
 func main() {
 	config := &configuration.IngressServiceMonitorConfiguration{
 		ConsulScheme:                  "https",
-		ConsulAddress:                 "localhost:8500",
-		ConsulToken:                   "$",
+		ConsulAddress:                 "localhost:8499",
+		ConsulToken:                   "5fe7b2db-0916-a905-c711-929cdc864173",
 		TypeGateway:                   "traefik",
 		IngressTagPrefix:              "gw-us-east-",
 		GatewayIngressServiceName:     "gateway-us-east-ingress",

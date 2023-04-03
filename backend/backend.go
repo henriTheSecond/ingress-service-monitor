@@ -66,9 +66,11 @@ func (b *backend) registerIngressService(services map[string][]string) error {
 			}
 		}
 	}
-	myservice, _, _ := b.client.Catalog().Service(b.gatewayIngresServiceName, "", &api.QueryOptions{})
-
-	if len(myservice) == 0 || len(myservice[0].ServiceTags) != len(tags) {
+	myservices, _, errorService := b.client.Catalog().Service(b.gatewayIngresServiceName, "", &api.QueryOptions{})
+	if errorService != nil {
+		return errorService
+	}
+	if len(myservices) == 0 || len(myservices[0].ServiceTags) != len(tags) {
 		err := b.client.Agent().ServiceRegister(&api.AgentServiceRegistration{
 			Name: b.gatewayIngresServiceName,
 			Port: b.gatewayServicePortHttp,

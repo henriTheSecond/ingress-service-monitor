@@ -3,6 +3,7 @@ package backend
 import (
 	"fmt"
 	"placlet/ingress-service-monitor/configuration"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -137,18 +138,66 @@ func (sd *servicedefaultsmanager) configureIngressGateway() error {
 	if len(tcplistener.Services) > 0 {
 		listeners = append(listeners, tcplistener)
 	}
-	success, _, err := sd.client.ConfigEntries().Set(&api.IngressGatewayConfigEntry{
-		Name:      sd.gatewayServiceName,
-		Kind:      api.IngressGateway,
-		Listeners: listeners,
-	}, &api.WriteOptions{})
-	if err != nil {
-		return err
+	ce, _, _ := sd.client.ConfigEntries().Get(api.IngressGateway, sd.gatewayServiceName, &api.QueryOptions{})
+	equalListeners := false
+	if ce != nil {
+		ingressgatewayConfigEntry := ce.(*api.IngressGatewayConfigEntry)
+		equalListeners = sd.equalListeners(ingressgatewayConfigEntry.Listeners, listeners)
 	}
-	if !success {
-		return fmt.Errorf("Not able to save the gateway configuration")
+	if !equalListeners {
+		log.Info().Msg("Adding new ingressgatewayconfigentry")
+		success, _, err := sd.client.ConfigEntries().Set(&api.IngressGatewayConfigEntry{
+			Name:      sd.gatewayServiceName,
+			Kind:      api.IngressGateway,
+			Listeners: listeners,
+		}, &api.WriteOptions{})
+		if err != nil {
+			return err
+		}
+		if !success {
+			return fmt.Errorf("Not able to save the gateway configuration")
+		}
 	}
 	return nil
+}
+func (sd *servicedefaultsmanager) equalListeners(l1 []api.IngressListener, l2 []api.IngressListener) bool {
+	if l1 == nil && l2 != nil {
+		return false
+	}
+	if l2 == nil && l1 != nil {
+		return false
+	}
+	if len(l1) != len(l2) {
+		return false
+	}
+	for i := 0; i < len(l1); i++ {
+		if l1[i].Port != l2[i].Port {
+			return false
+		}
+		if l1[i].Protocol != l2[i].Protocol {
+			return false
+		}
+		if len(l1[i].Services) != len(l2[i].Services) {
+			return false
+		}
+		sort.Slice(l1[i].Services, func(a, b int) bool {
+			return l1[i].Services[a].Name < l1[i].Services[b].Name
+		})
+		sort.Slice(l2[i].Services, func(a, b int) bool {
+			return l2[i].Services[a].Name < l2[i].Services[b].Name
+		})
+		for j := 0; j < len(l1[i].Services); j++ {
+			if len(l1[i].Services[j].Hosts) != len(l2[i].Services[j].Hosts) {
+				return false
+			}
+			for k := 0; k < len(l1[i].Services[j].Hosts); k++ {
+				if l1[i].Services[j].Hosts[k] != l2[i].Services[j].Hosts[k] {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 func (sd *servicedefaultsmanager) getHostFromTag(tag string) string {
 	if sd.typeGateway == "traefik" {
