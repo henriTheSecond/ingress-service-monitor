@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"placlet/ingress-service-monitor/configuration"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/syncmap"
 )
 
 type servicedefaultentry struct {
@@ -15,7 +17,7 @@ type servicedefaultentry struct {
 	protocol    string
 }
 type servicedefaultsmanager struct {
-	defaults                map[string]*servicedefaultentry
+	defaults                *syncmap.Map
 	client                  *api.Client
 	gatewayServicePortHttp  int
 	gatewayServicePortHttp2 int
@@ -23,7 +25,7 @@ type servicedefaultsmanager struct {
 	gatewayServicePortGrpc  int
 	gatewayServiceName      string
 	typeGateway             string
-	services                map[string][]string
+	services                *syncmap.Map
 }
 
 func NewServiceDefaultsManager(c *api.Client, config *configuration.IngressServiceMonitorConfiguration) servicedefaultsmanager {
@@ -35,42 +37,48 @@ func NewServiceDefaultsManager(c *api.Client, config *configuration.IngressServi
 	sdManager.gatewayServicePortGrpc = config.GatewayServicePortGRPC
 	sdManager.gatewayServicePortTcp = config.GatewayServicePortTCP
 	sdManager.client = c
-	sdManager.defaults = make(map[string]*servicedefaultentry)
-	sdManager.services = make(map[string][]string)
+	sdManager.defaults = &sync.Map{}
+	sdManager.services = &sync.Map{}
 	return *sdManager
 }
 func (sd *servicedefaultsmanager) getServiceProtocol(serviceName string) (string, error) {
-	if sd.defaults[serviceName] == nil {
-		return "", nil
-	}
-
-	return sd.defaults[serviceName].protocol, nil
+	value, _ := sd.defaults.Load(serviceName)
+	val := value.(*servicedefaultentry)
+	return val.protocol, nil
 }
 func (sd *servicedefaultsmanager) pollServiceDefaults(serviceName string) {
-	configEntry, opts, configerr := sd.client.ConfigEntries().Get(api.ServiceDefaults, serviceName, &api.QueryOptions{WaitIndex: sd.defaults[serviceName].consulIndex})
+	value, _ := sd.defaults.Load(serviceName)
+	val := value.(*servicedefaultentry)
+	configEntry, opts, configerr := sd.client.ConfigEntries().Get(api.ServiceDefaults, serviceName, &api.QueryOptions{WaitIndex: val.consulIndex})
 	if configerr != nil {
 		log.Err(configerr).Msg("Error occured")
-		if sd.defaults[serviceName].protocol != "" {
-			sd.defaults[serviceName] = &servicedefaultentry{consulIndex: 0, protocol: ""}
+		if val.protocol != "" {
+			sd.defaults.Store(serviceName, &servicedefaultentry{consulIndex: 0, protocol: ""})
 		}
 		time.Sleep(5 * time.Second)
 	} else {
 		log.Info().Str("serviceName", serviceName).Str("consulindex", fmt.Sprintf("%v", opts.LastIndex)).Msg("check service defaults")
 		cc, _ := configEntry.(*api.ServiceConfigEntry)
-		sd.defaults[serviceName] = &servicedefaultentry{consulIndex: opts.LastIndex, protocol: cc.Protocol}
+		sd.defaults.Store(serviceName, &servicedefaultentry{consulIndex: opts.LastIndex, protocol: cc.Protocol})
 	}
 	sd.configureIngressGateway()
 	sd.pollServiceDefaults(serviceName)
 }
 func (sd *servicedefaultsmanager) StartPolling(services map[string][]string) {
-	sd.services = services
-	for key := range sd.services {
-		if sd.defaults[key] == nil {
-			log.Info().Str("key", key).Msg("starting polling service defaults")
-			sd.defaults[key] = &servicedefaultentry{consulIndex: 0, protocol: ""}
-			go sd.pollServiceDefaults(key)
-		}
+	sd.services = new(sync.Map)
+	for key, value := range services {
+		sd.services.Store(key, value)
 	}
+	sd.services.Range(func(key, value interface{}) bool {
+		k, _ := key.(string)
+		val, _ := sd.defaults.Load(k)
+		if val == nil {
+			log.Info().Str("key", k).Msg("starting polling service defaults")
+			sd.defaults.Store(k, &servicedefaultentry{consulIndex: 0, protocol: ""})
+			go sd.pollServiceDefaults(k)
+		}
+		return true
+	})
 	sd.configureIngressGateway()
 }
 func (sd *servicedefaultsmanager) configureIngressGateway() error {
@@ -87,14 +95,16 @@ func (sd *servicedefaultsmanager) configureIngressGateway() error {
 	grpclistener.Port = sd.gatewayServicePortGrpc
 	grpclistener.Protocol = "grpc"
 
-	for key, element := range sd.services {
+	sd.services.Range(func(key, value interface{}) bool {
+		k, _ := key.(string)
+		element := value.([]string)
 		for _, tag := range element {
 			host := sd.getHostFromTag(tag)
 			if host != "" {
 				var ingressService api.IngressService
-				ingressService.Name = key
+				ingressService.Name = k
 				ingressService.Hosts = append(ingressService.Hosts, host)
-				protocol, protocolerr := sd.getServiceProtocol(key)
+				protocol, protocolerr := sd.getServiceProtocol(k)
 				if protocolerr != nil {
 					break
 				}
@@ -112,7 +122,8 @@ func (sd *servicedefaultsmanager) configureIngressGateway() error {
 				}
 			}
 		}
-	}
+		return true
+	})
 	var listeners []api.IngressListener
 	if len(httplistener.Services) > 0 {
 		listeners = append(listeners, httplistener)

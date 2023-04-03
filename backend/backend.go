@@ -66,17 +66,21 @@ func (b *backend) registerIngressService(services map[string][]string) error {
 			}
 		}
 	}
-	err := b.client.Agent().ServiceRegister(&api.AgentServiceRegistration{
-		Name: b.gatewayIngresServiceName,
-		Port: b.gatewayServicePortHttp,
-		Tags: tags,
-		Check: &api.AgentServiceCheck{
-			HTTP:     fmt.Sprintf("http://localhost:%d/ready", b.gatewayServiceHealthCheckPort),
-			Interval: "30s",
-		},
-	})
-	if err != nil {
-		return err
+	myservice, _, _ := b.client.Catalog().Service(b.gatewayIngresServiceName, "", &api.QueryOptions{})
+
+	if len(myservice) == 0 || len(myservice[0].ServiceTags) != len(tags) {
+		err := b.client.Agent().ServiceRegister(&api.AgentServiceRegistration{
+			Name: b.gatewayIngresServiceName,
+			Port: b.gatewayServicePortHttp,
+			Tags: tags,
+			Check: &api.AgentServiceCheck{
+				HTTP:     fmt.Sprintf("http://localhost:%d/ready", b.gatewayServiceHealthCheckPort),
+				Interval: "30s",
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -108,15 +112,5 @@ func (b *backend) StartMonitoring(cIndex uint64) {
 		log.Err(err2).Msg("Error occured")
 		time.Sleep(2 * time.Second)
 	}
-
 	b.StartMonitoring(consulIndex)
-}
-
-func (b *backend) pollServicesWithoutDefaults(servicesWhithoutDefaults []string) {
-	for _, service := range servicesWhithoutDefaults {
-		b.pollServiceWithoutDefaults(service)
-	}
-}
-func (b *backend) pollServiceWithoutDefaults(serviceWithoutDefaults string) {
-	b.client.ConfigEntries().Get(api.ServiceDefaults, serviceWithoutDefaults, &api.QueryOptions{})
 }

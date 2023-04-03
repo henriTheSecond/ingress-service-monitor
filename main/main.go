@@ -121,7 +121,7 @@ func main() {
 	}
 
 	log.Info().Msg("Starting monitoring")
-	go b.StartMonitoring(0)
+	go b.StartMonitoring(1)
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		healthCheck(w, r)
 	})
