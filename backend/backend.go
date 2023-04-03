@@ -17,11 +17,8 @@ type backend struct {
 	ingressTagPrefix              string
 	gatewayIngresServiceName      string
 	gatewayServicePortHttp        int
-	gatewayServicePortHttp2       int
-	gatewayServicePortTcp         int
-	gatewayServicePortGrpc        int
-	gatewayServiceName            string
 	gatewayServiceHealthCheckPort int
+	sdManager                     *servicedefaultsmanager
 }
 
 func NewBackend(config *configuration.IngressServiceMonitorConfiguration) (*backend, error) {
@@ -30,17 +27,15 @@ func NewBackend(config *configuration.IngressServiceMonitorConfiguration) (*back
 	b.ingressTagPrefix = config.IngressTagPrefix
 	b.gatewayIngresServiceName = config.GatewayIngressServiceName
 	b.gatewayServicePortHttp = config.GatewayServicePortHTTP
-	b.gatewayServicePortHttp2 = config.GatewayServicePortHTTP2
-	b.gatewayServicePortGrpc = config.GatewayServicePortGRPC
-	b.gatewayServicePortTcp = config.GatewayServicePortTCP
 	b.gatewayServiceHealthCheckPort = config.GatewayServiceHealthCheckPort
-	b.gatewayServiceName = config.GatewayServiceName
 	b.config = &api.Config{Address: config.ConsulAddress, Scheme: config.ConsulScheme, Token: config.ConsulToken}
 	c, err := api.NewClient(b.config)
 	if err != nil {
 		return nil, err
 	}
 	b.client = c
+	sdManager := NewServiceDefaultsManager(c, config)
+	b.sdManager = &sdManager
 	return b, nil
 }
 func (b *backend) getIngressServices(consulIndex uint64) (map[string][]string, uint64, error) {
@@ -106,94 +101,17 @@ func (b *backend) StartMonitoring(cIndex uint64) {
 		log.Err(err).Msg("Error occured")
 		time.Sleep(2 * time.Second)
 	}
+	b.sdManager.StartPolling(services)
 	log.Info().Str("consulindex", fmt.Sprintf("%v", cIndex)).Msg("registerIngressService")
 	err2 := b.registerIngressService(services)
 	if err2 != nil {
 		log.Err(err2).Msg("Error occured")
 		time.Sleep(2 * time.Second)
 	}
-	log.Info().Str("consulindex", fmt.Sprintf("%v", cIndex)).Msg("configureIngressGateway")
-	err3 := b.configureIngressGateway(services)
-	if err3 != nil {
-		log.Err(err3).Msg("Error occured")
-		time.Sleep(2 * time.Second)
-	}
 
 	b.StartMonitoring(consulIndex)
 }
-func (b *backend) configureIngressGateway(services map[string][]string) error {
-	var httplistener api.IngressListener
-	httplistener.Port = b.gatewayServicePortHttp
-	httplistener.Protocol = "http"
-	var http2listener api.IngressListener
-	http2listener.Port = b.gatewayServicePortHttp2
-	http2listener.Protocol = "http2"
-	var tcplistener api.IngressListener
-	tcplistener.Port = b.gatewayServicePortTcp
-	tcplistener.Protocol = "tcp"
-	var grpclistener api.IngressListener
-	grpclistener.Port = b.gatewayServicePortGrpc
-	grpclistener.Protocol = "grpc"
-	var unknownServiceDefaults []string
 
-	for key, element := range services {
-		for _, tag := range element {
-			host := b.getHostFromTag(tag)
-			if host != "" {
-				var ingressService api.IngressService
-				ingressService.Name = key
-				ingressService.Hosts = append(ingressService.Hosts, host)
-				configEntry, _, configerr := b.client.ConfigEntries().Get(api.ServiceDefaults, key, &api.QueryOptions{})
-				if configerr != nil {
-					unknownServiceDefaults = append(unknownServiceDefaults, key)
-					log.Err(configerr).Msg("Error occured")
-					break
-				}
-				cc, _ := configEntry.(*api.ServiceConfigEntry)
-				if cc == nil {
-					break
-				}
-				switch cc.Protocol {
-				case "http":
-					httplistener.Services = append(httplistener.Services, ingressService)
-				case "tcp":
-					tcplistener.Services = append(tcplistener.Services, ingressService)
-				case "grpc":
-					grpclistener.Services = append(grpclistener.Services, ingressService)
-				case "http2":
-					http2listener.Services = append(http2listener.Services, ingressService)
-				default:
-
-				}
-			}
-		}
-	}
-	var listeners []api.IngressListener
-	if len(httplistener.Services) > 0 {
-		listeners = append(listeners, httplistener)
-	}
-	if len(http2listener.Services) > 0 {
-		listeners = append(listeners, http2listener)
-	}
-	if len(grpclistener.Services) > 0 {
-		listeners = append(listeners, grpclistener)
-	}
-	if len(tcplistener.Services) > 0 {
-		listeners = append(listeners, tcplistener)
-	}
-	success, _, err := b.client.ConfigEntries().Set(&api.IngressGatewayConfigEntry{
-		Name:      b.gatewayServiceName,
-		Kind:      api.IngressGateway,
-		Listeners: listeners,
-	}, &api.WriteOptions{})
-	if err != nil {
-		return err
-	}
-	if !success {
-		return fmt.Errorf("Not able to save the gateway configuration")
-	}
-	return nil
-}
 func (b *backend) pollServicesWithoutDefaults(servicesWhithoutDefaults []string) {
 	for _, service := range servicesWhithoutDefaults {
 		b.pollServiceWithoutDefaults(service)
@@ -201,20 +119,4 @@ func (b *backend) pollServicesWithoutDefaults(servicesWhithoutDefaults []string)
 }
 func (b *backend) pollServiceWithoutDefaults(serviceWithoutDefaults string) {
 	b.client.ConfigEntries().Get(api.ServiceDefaults, serviceWithoutDefaults, &api.QueryOptions{})
-}
-func (b *backend) getHostFromTag(tag string) string {
-	if b.typeGateway == "traefik" {
-		var cleanTag = strings.ReplaceAll(tag, "'", "`")
-		index := strings.Index(cleanTag, "`")
-		if index > -1 {
-			splitted := strings.Split(cleanTag, "`")
-			if len(splitted) > 2 {
-				return splitted[1]
-			}
-		}
-	}
-	if b.typeGateway == "fabio" {
-		return tag
-	}
-	return ""
 }
