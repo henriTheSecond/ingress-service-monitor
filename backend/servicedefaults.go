@@ -105,6 +105,7 @@ func (sd *servicedefaultsmanager) configureIngressGateway() error {
 				var ingressService api.IngressService
 				ingressService.Name = k
 				ingressService.Hosts = append(ingressService.Hosts, host)
+				log.Info().Str("host", host).Msg("Host found")
 				protocol, protocolerr := sd.getServiceProtocol(k)
 				if protocolerr != nil {
 					break
@@ -211,7 +212,16 @@ func (sd *servicedefaultsmanager) getHostFromTag(tag string) string {
 		}
 	}
 	if sd.typeGateway == "fabio" {
-		return tag
+		index := strings.Index(tag, "urlprefix-")
+		if index > -1 {
+			splitted := strings.Split(tag, "urlprefix-")
+			if len(splitted) >= 2 {
+				splitted2 := strings.Split(splitted[1], "/")
+				if len(splitted2) > 0 {
+					return splitted2[0]
+				}
+			}
+		}
 	}
 	return ""
 }
